@@ -7,11 +7,14 @@ import yt_dlp
 import asyncio
 from collections import deque
 
+from keep_alive import keep_alive
+
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD_ID = 1393926471701237830
 SONG_QUEUES = {}
 
+keep_alive()
 
 intents = discord.Intents.default()
 intents.message_content = True
