@@ -43,11 +43,6 @@ def _extract(query, ydl_options):
         return ydl.extract_info(query, download=False)
 
 
-@bot.tree.command(name="hello", description="Say hello")
-async def hello(interaction: discord.Interaction):
-    await interaction.response.send_message(f"Hello, {interaction.user.mention}!")
-
-
 @bot.tree.command(name="play", description="Play a song or add it to the queue.")
 @app_commands.describe(song_query="Search query")
 async def play(interaction: discord.Interaction, song_query: str):
@@ -56,12 +51,12 @@ async def play(interaction: discord.Interaction, song_query: str):
     member = interaction.guild.get_member(interaction.user.id)
     voice_state = member.voice if member else None
     if not voice_state or not voice_state.channel:
-        await interaction.followup.send("You must be in a voice channel.")
+        await interaction.followup.send("You must be in a voice channel.", ephemeral=True)
         return
     voice_channel = voice_state.channel
 
     if voice_channel is None:
-        await interaction.followup.send("You must be in a voice channel.")
+        await interaction.followup.send("You must be in a voice channel.", ephemeral=True)
         return
     
     voice_client = interaction.guild.voice_client
@@ -107,9 +102,9 @@ async def skip(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
     if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
         voice_client.stop()
-        await interaction.response.send_message("Skipped the current song.")
+        await interaction.response.send_message("Skipped the current song.", ephemeral=True)
     else:
-        await interaction.response.send_message("Not playing anything to skip.")
+        await interaction.response.send_message("Not playing anything to skip.", ephemeral=True)
 
 
 @bot.tree.command(name="pause", description="Pauses the current song.")
@@ -117,13 +112,13 @@ async def pause(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
 
     if voice_client is None:
-        return await interaction.response.send_message("Not connected to a voice channel!")
+        return await interaction.response.send_message("Not connected to a voice channel!", ephemeral=True)
     
     if not voice_client.is_playing():
-        return await interaction.response.send_message("Nothing to pause.")
+        return await interaction.response.send_message("Nothing to pause.", ephemeral=True)
     
     voice_client.pause()
-    await interaction.response.send_message("Paused.")
+    await interaction.response.send_message("Paused.", ephemeral=True)
 
 
 @bot.tree.command(name="resume", description="Resumes playback.")
@@ -131,13 +126,13 @@ async def resume(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
 
     if voice_client is None:
-        return await interaction.response.send_message("Not connected to a voice channel!")
+        return await interaction.response.send_message("Not connected to a voice channel!", ephemeral=True)
     
     if not voice_client.is_paused():
-        return await interaction.response.send_message("Nothing to resume.")
+        return await interaction.response.send_message("Nothing to resume.", ephemeral=True)
     
     voice_client.resume()
-    await interaction.response.send_message("Resumed.")
+    await interaction.response.send_message("Resumed.", ephemeral=True)
 
 
 @bot.tree.command(name="stop", description="Stop playback and clear the queue.")
@@ -146,7 +141,7 @@ async def stop(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
 
     if not voice_client or not voice_client.is_connected():
-        await interaction.followup.send("Not connected to a voice channel.")
+        await interaction.followup.send("Not connected to a voice channel.", ephemeral=True)
         return
     
     # Clear the queue
@@ -187,7 +182,7 @@ async def queue(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
 
     if not voice_client or not voice_client.is_connected():
-        await interaction.followup.send("Not connected to a voice channel.")
+        await interaction.followup.send("Not connected to a voice channel.", ephemeral=True)
         return
 
 
@@ -196,7 +191,7 @@ async def queue(interaction: discord.Interaction):
         SONG_QUEUES[guild_id_str].clear()
         await interaction.response.send_message("Queue cleared.")
     else:
-        await interaction.response.send_message("Queue already empty.")
+        await interaction.response.send_message("Queue already empty.", ephemeral=True)
 
 
 async def play_next_song(voice_client, guild_id, channel):
@@ -216,11 +211,59 @@ async def play_next_song(voice_client, guild_id, channel):
             asyncio.run_coroutine_threadsafe(play_next_song(voice_client, guild_id, channel), bot.loop)
 
         voice_client.play(source, after=after_playing)
-        asyncio.create_task(channel.send(f"Now playing: **{title}**"))
+        await channel.send(f"▶️ Now playing: **{title}**", view=MusicControls())
+
 
     else:
         await voice_client.disconnect()
         SONG_QUEUES[guild_id] = deque()
+
+
+# Buttons
+class MusicControls(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary, emoji="⏸️")
+    async def pause(self, interaction: discord.Interaction, button: discord.ui.Button):
+        vc = interaction.guild.voice_client
+        if vc and vc.is_playing():
+            vc.pause()
+            await interaction.response.send_message("⏸️ Paused", view=ResumeButton())
+        else:
+            await interaction.response.send_message("Nothing is playing.", ephemeral=True)
+
+    @discord.ui.button(label="Skip", style=discord.ButtonStyle.primary, emoji="⏭️")
+    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        vc = interaction.guild.voice_client
+        if vc and vc.is_playing():
+            vc.stop()
+            await interaction.response.send_message("⏭️ Skipped", ephemeral=True)
+        else:
+            await interaction.response.send_message("Nothing to skip.", ephemeral=True)
+
+    @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️")
+    async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
+        vc = interaction.guild.voice_client
+        if vc and vc.is_connected():
+            await vc.disconnect()
+            await interaction.response.send_message("⏹️ Stopped and disconnected.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Not connected to any voice channel.", ephemeral=True)
+
+
+class ResumeButton(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Resume", style=discord.ButtonStyle.success, emoji="▶️")
+    async def resume(self, interaction: discord.Interaction, button: discord.ui.Button):
+        vc = interaction.guild.voice_client
+        if vc and vc.is_paused():
+            vc.resume()
+            await interaction.response.send_message("▶️ Resumed", ephemeral=True)
+        else:
+            await interaction.response.send_message("Nothing is paused.", ephemeral=True)
 
 
 
