@@ -66,20 +66,30 @@ async def play(interaction: discord.Interaction, song_query: str):
     elif voice_channel != voice_client.channel:
         await voice_client.move_to(voice_channel)
 
+    is_playlist = "list=" in song_query
+
     ydl_options = {
         "format": "bestaudio[abr<=96]/bestaudio",
-        "noplaylist": True,
+        "noplaylist": not is_playlist,
         "youtube_include_dash_manifest": False,
     }
 
-    query = f"ytsearch1:{song_query}"
-    results = await search_ytdlp_async(query, ydl_options)
-    tracks = results.get("entries", [])
+    if "youtube.com" in song_query or "youtu.be" in song_query:
+        query = song_query
+    else:
+        query = f"ytsearch1:{song_query}"
 
-    if tracks is None:
-        await interaction.followup.send("No results found.")
+    results = await search_ytdlp_async(query, ydl_options)
+
+    if "entries" in results:
+        tracks = [t for t in results["entries"] if t] 
+    else:
+        tracks = [results] if results else []
+
+    if not tracks:
+        await interaction.followup.send("No results found or playlist is empty.", ephemeral=True)
         return
-    
+        
     first_track = tracks[0]
     audio_url = first_track["url"]
     title = first_track.get("title", "Untitled")
@@ -88,7 +98,14 @@ async def play(interaction: discord.Interaction, song_query: str):
     if SONG_QUEUES.get(guild_id) is None:
         SONG_QUEUES[guild_id] = deque()
 
-    SONG_QUEUES[guild_id].append((audio_url, title))
+    # SONG_QUEUES[guild_id].append((audio_url, title))
+
+    for track in tracks:
+        if not track:
+            continue
+        audio_url = track["url"]
+        title = track.get("title", "Untitled")
+        SONG_QUEUES[guild_id].append((audio_url, title))
 
     if voice_client.is_playing() or voice_client.is_paused():
         await interaction.followup.send(f"Added to queue: **{title}**")
@@ -241,6 +258,23 @@ class MusicControls(discord.ui.View):
             await interaction.response.send_message("⏭️ Skipped", ephemeral=True)
         else:
             await interaction.response.send_message("Nothing to skip.", ephemeral=True)
+
+    @discord.ui.button(label="Queue", style=discord.ButtonStyle.primary, emoji="📜")
+    async def queue(self, interaction:discord.Interaction, button:discord.ui.Button):
+        guild_id_str = str(interaction.guild_id)
+
+        queue = SONG_QUEUES.get(guild_id_str)
+
+        if not queue or len(queue) == 0:
+            await interaction.response.send_message("📭 The queue is currently empty.")
+            return
+
+        # Format the queue list
+        message = "**🎶 Current Queue:**\n"
+        for idx, (_, title) in enumerate(queue, start=1):
+            message += f"{idx}. {title}\n"
+
+        await interaction.response.send_message(message)
 
     @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️")
     async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
