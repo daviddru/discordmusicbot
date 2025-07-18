@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import yt_dlp
 import asyncio
 from collections import deque
+from urllib.parse import urlparse, parse_qs
 
 
 load_dotenv()
@@ -41,6 +42,21 @@ async def search_ytdlp_async(query, ydl_options):
 def _extract(query, ydl_options):
     with yt_dlp.YoutubeDL(ydl_options) as ydl:
         return ydl.extract_info(query, download=False)
+    
+def should_download_playlist(url: str) -> bool:
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+
+    list_param = query.get("list", [None])[0]
+
+    if not list_param:
+        return False
+
+    # Reject YouTube autoplay/radio lists (RD stands for "Related/Radio")
+    if list_param.startswith("RD"):
+        return False
+
+    return True
 
 
 @bot.tree.command(name="play", description="Play a song or add it to the queue.")
@@ -66,11 +82,12 @@ async def play(interaction: discord.Interaction, song_query: str):
     elif voice_channel != voice_client.channel:
         await voice_client.move_to(voice_channel)
 
-    is_playlist = "list=" in song_query
+    is_playlist = should_download_playlist(song_query)
 
     ydl_options = {
         "format": "bestaudio[abr<=96]/bestaudio",
         "noplaylist": not is_playlist,
+        "ignoreerrors": True,
         "youtube_include_dash_manifest": False,
     }
 
@@ -107,11 +124,19 @@ async def play(interaction: discord.Interaction, song_query: str):
         title = track.get("title", "Untitled")
         SONG_QUEUES[guild_id].append((audio_url, title))
 
+    num_tracks = len(tracks)
+
+    async def send_followup_play():
+        if not is_playlist:
+            await interaction.followup.send(f"Added to queue: **{title}**")
+        else:
+            await interaction.followup.send(f"Added **{num_tracks} songs** to the queue.")
+
     if voice_client.is_playing() or voice_client.is_paused():
-        await interaction.followup.send(f"Added to queue: **{title}**")
+        await send_followup_play()
     else:
         await play_next_song(voice_client, guild_id, interaction.channel)
-        await interaction.followup.send(f"Added to queue: **{title}**")
+        await send_followup_play()
 
 
 @bot.tree.command(name="skip", description="Skips to the next song")
@@ -195,7 +220,7 @@ async def queue(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="clear", description="Clears the current song queue.")
-async def queue(interaction: discord.Interaction):
+async def clear_queue(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
 
     if not voice_client or not voice_client.is_connected():
