@@ -236,6 +236,30 @@ async def clear_queue(interaction: discord.Interaction):
         await interaction.response.send_message("Queue already empty.", ephemeral=True)
 
 
+@bot.tree.command(name="remove", description="Removes a song from the queue.")
+@app_commands.describe(index="Index of the song from the queue")
+async def remove_song(interaction: discord.Interaction, index: int):
+    guild_id_str = str(interaction.guild_id)
+
+    queue = SONG_QUEUES.get(guild_id_str)
+
+    if not queue:
+        await interaction.response.send_message("The queue is empty.", ephemeral=True)
+        return
+
+    if index < 1 or index > len(queue):
+        await interaction.response.send_message("Invalid index.", ephemeral=True)
+        return
+
+    queue_list = list(queue)
+    removed_song = queue_list.pop(index - 1)
+    SONG_QUEUES[guild_id_str] = deque(queue_list)
+
+    audio_url, title = removed_song
+    await interaction.response.send_message(f"Removed **{title}** from the queue.")
+
+
+
 async def play_next_song(voice_client, guild_id, channel):
     if SONG_QUEUES[guild_id]:
         audio_url, title = SONG_QUEUES[guild_id].popleft()
