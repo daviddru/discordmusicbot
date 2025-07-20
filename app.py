@@ -202,7 +202,7 @@ async def stop(interaction: discord.Interaction):
 
 
 @bot.tree.command(name="queue", description="Show the current song queue.")
-async def queue(interaction: discord.Interaction):
+async def show_queue(interaction: discord.Interaction):
     guild_id_str = str(interaction.guild_id)
 
     queue = SONG_QUEUES.get(guild_id_str)
@@ -216,7 +216,7 @@ async def queue(interaction: discord.Interaction):
     for idx, (_, title) in enumerate(queue, start=1):
         message += f"{idx}. {title}\n"
 
-    await interaction.response.send_message(message)
+    await interaction.response.send_message(message, view=RemoveButton(queue, guild_id_str))
 
 
 @bot.tree.command(name="clear", description="Clears the current song queue.")
@@ -323,7 +323,7 @@ class MusicControls(discord.ui.View):
         for idx, (_, title) in enumerate(queue, start=1):
             message += f"{idx}. {title}\n"
 
-        await interaction.response.send_message(message)
+        await interaction.response.send_message(message, view=RemoveButton(queue, guild_id_str))
 
     @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger, emoji="⏹️")
     async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -348,6 +348,49 @@ class ResumeButton(discord.ui.View):
         else:
             await interaction.response.send_message("Nothing is paused.", ephemeral=True)
 
+
+class RemoveButton(discord.ui.View):
+    def __init__(self, queue, guild_id):
+        super().__init__(timeout=None)
+        self.queue = queue
+        self.guild_id = guild_id
+
+        options = [
+            discord.SelectOption(label=f"{i+1}. {title}", value=str(i))
+            for i, (_, title) in enumerate(queue)
+        ]
+        self.add_item(self.SongSelect(options))
+
+    class SongSelect(discord.ui.Select):
+        def __init__(self, options):
+            super().__init__(
+                placeholder="Select a song to remove...",
+                min_values=1,
+                max_values=1,
+                options=options,
+                row=2
+            )
+
+        async def callback(self, interaction: discord.Interaction):
+            view: RemoveButton = self.view 
+            index = int(self.values[0])
+
+            guild_id_str = str(interaction.guild_id)
+            queue = SONG_QUEUES.get(guild_id_str)
+
+            if not queue or index >= len(queue):
+                await interaction.response.send_message("⚠️ Invalid or empty queue.", ephemeral=True)
+                return
+
+            removed_song = queue[index]
+            queue_list = list(queue)
+            queue_list.pop(index)
+            SONG_QUEUES[guild_id_str] = deque(queue_list)
+
+            audio_url, title = removed_song
+            await interaction.response.send_message(f"✅ Removed **{title}** from the queue.", ephemeral=True)
+
+            await interaction.message.delete()
 
 
 @bot.event
