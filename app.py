@@ -360,6 +360,7 @@ class RemoveButton(discord.ui.View):
             for i, (_, title) in enumerate(queue)
         ]
         self.add_item(self.SongSelect(options))
+        self.add_item(self.ClearQueueButton())
 
     class SongSelect(discord.ui.Select):
         def __init__(self, options):
@@ -391,6 +392,18 @@ class RemoveButton(discord.ui.View):
             await interaction.response.send_message(f"✅ Removed **{title}** from the queue.", ephemeral=True)
 
             await interaction.message.delete()
+
+
+    class ClearQueueButton(discord.ui.Button):
+        def __init__(self):
+            super().__init__(label="Clear", style=discord.ButtonStyle.danger, emoji="✖️", row=3)
+
+        async def callback(self, interaction: discord.Interaction):
+            guild_id_str = str(interaction.guild_id)
+            if guild_id_str in SONG_QUEUES:
+                SONG_QUEUES[guild_id_str].clear()
+                await interaction.response.send_message("🧹 Queue cleared!", ephemeral=True)
+                await interaction.message.delete()
 
 
 @bot.event
